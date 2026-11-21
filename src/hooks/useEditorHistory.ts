@@ -9,6 +9,7 @@ import type {
 	CropRegion,
 	SpeedRegion,
 	TrimRegion,
+	VolumeRegion,
 	WebcamLayoutPreset,
 	WebcamMaskShape,
 	WebcamPosition,
@@ -17,6 +18,7 @@ import type {
 } from "@/components/video-editor/types";
 import {
 	DEFAULT_CROP_REGION,
+	DEFAULT_MASTER_VOLUME,
 	DEFAULT_WEBCAM_MIRRORED,
 	DEFAULT_WEBCAM_REACTIVE_ZOOM,
 } from "@/components/video-editor/types";
@@ -33,6 +35,10 @@ export interface EditorState {
 	autoFocusAll: boolean;
 	trimRegions: TrimRegion[];
 	speedRegions: SpeedRegion[];
+	volumeRegions: VolumeRegion[];
+	/** Linear gain applied to the whole soundtrack (0–2). */
+	masterVolume: number;
+	audioMuted: boolean;
 	annotationRegions: AnnotationRegion[];
 	cropRegion: CropRegion;
 	wallpaper: string;
@@ -57,6 +63,9 @@ export const INITIAL_EDITOR_STATE: EditorState = {
 	autoFocusAll: false,
 	trimRegions: [],
 	speedRegions: [],
+	volumeRegions: [],
+	masterVolume: DEFAULT_MASTER_VOLUME,
+	audioMuted: false,
 	annotationRegions: [],
 	cropRegion: DEFAULT_CROP_REGION,
 	wallpaper: DEFAULT_EDITOR_LAYOUT_SETTINGS.wallpaper,

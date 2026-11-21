@@ -397,6 +397,47 @@ export const SPEED_OPTIONS: Array<{ speed: PlaybackSpeed; label: string }> = [
 
 export const DEFAULT_PLAYBACK_SPEED: PlaybackSpeed = 1.5;
 
+/** Linear gain multiplier: 0 = silent, 1 = unchanged, 2 = +6 dB. */
+export type AudioVolume = number;
+
+export const MIN_AUDIO_VOLUME = 0;
+export const MAX_AUDIO_VOLUME = 2;
+export const DEFAULT_REGION_VOLUME: AudioVolume = 0.5;
+export const DEFAULT_MASTER_VOLUME: AudioVolume = 1;
+
+export function clampAudioVolume(volume: number): AudioVolume {
+	if (!Number.isFinite(volume)) return 1;
+	return Math.round(Math.min(MAX_AUDIO_VOLUME, Math.max(MIN_AUDIO_VOLUME, volume)) * 100) / 100;
+}
+
+/** A timeline span whose audio is scaled by `volume` (relative to the master volume). */
+export interface VolumeRegion {
+	id: string;
+	startMs: number;
+	endMs: number;
+	volume: AudioVolume;
+}
+
+export const VOLUME_OPTIONS: Array<{ volume: AudioVolume; label: string }> = [
+	{ volume: 0, label: "0%" },
+	{ volume: 0.25, label: "25%" },
+	{ volume: 0.5, label: "50%" },
+	{ volume: 0.75, label: "75%" },
+	{ volume: 1.25, label: "125%" },
+	{ volume: 1.5, label: "150%" },
+	{ volume: 2, label: "200%" },
+];
+
+/** Global audio settings applied on top of volume regions. */
+export interface AudioMixSettings {
+	masterVolume: AudioVolume;
+	muted: boolean;
+}
+
+export function formatVolumePercent(volume: AudioVolume): string {
+	return `${Math.round(volume * 100)}%`;
+}
+
 export const ZOOM_DEPTH_SCALES: Record<ZoomDepth, number> = {
 	1: 1.25,
 	2: 1.5,

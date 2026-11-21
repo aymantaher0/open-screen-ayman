@@ -18,6 +18,8 @@ import {
 	Trash2,
 	Unlock,
 	Upload,
+	Volume2,
+	VolumeX,
 	X,
 } from "lucide-react";
 import { type ComponentType, useCallback, useMemo, useRef, useState } from "react";
@@ -87,12 +89,18 @@ import type {
 	ZoomFocusMode,
 } from "./types";
 import {
+	clampAudioVolume,
+	DEFAULT_MASTER_VOLUME,
 	DEFAULT_WEBCAM_MIRRORED,
 	DEFAULT_WEBCAM_REACTIVE_ZOOM,
+	formatVolumePercent,
+	MAX_AUDIO_VOLUME,
 	MAX_ZOOM_SCALE,
+	MIN_AUDIO_VOLUME,
 	MIN_ZOOM_SCALE,
 	ROTATION_3D_PRESET_ORDER,
 	SPEED_OPTIONS,
+	VOLUME_OPTIONS,
 	ZOOM_DEPTH_SCALES,
 } from "./types";
 import { getFocusBoundsForScale } from "./videoPlayback/focusUtils";
@@ -319,6 +327,20 @@ interface SettingsPanelProps {
 	selectedSpeedValue?: PlaybackSpeed | null;
 	onSpeedChange?: (speed: PlaybackSpeed) => void;
 	onSpeedDelete?: (id: string) => void;
+	selectedVolumeId?: string | null;
+	selectedVolumeValue?: number | null;
+	/** Live slider updates; follow with onVolumeCommit. */
+	onVolumeChange?: (volume: number) => void;
+	onVolumeCommit?: () => void;
+	/** One-shot level change (preset buttons, typed value). */
+	onVolumePreset?: (volume: number) => void;
+	onVolumeDelete?: (id: string) => void;
+	masterVolume?: number;
+	onMasterVolumeChange?: (volume: number) => void;
+	onMasterVolumeCommit?: () => void;
+	audioMuted?: boolean;
+	onAudioMutedChange?: (muted: boolean) => void;
+	volumeRegionCount?: number;
 	hasWebcam?: boolean;
 	webcamLayoutPreset?: WebcamLayoutPreset;
 	onWebcamLayoutPresetChange?: (preset: WebcamLayoutPreset) => void;
@@ -361,7 +383,14 @@ const ZOOM_DEPTH_OPTIONS: Array<{ depth: ZoomDepth; label: string }> = [
 	{ depth: 6, label: "5×" },
 ];
 
-type SettingsPanelMode = "background" | "effects" | "layout" | "cursor" | "export" | "timeline";
+type SettingsPanelMode =
+	| "background"
+	| "effects"
+	| "layout"
+	| "cursor"
+	| "export"
+	| "timeline"
+	| "audio";
 
 const MP4_EXPORT_SHORT_SIDES = {
 	medium: 720,
@@ -455,6 +484,18 @@ export function SettingsPanel({
 	selectedSpeedValue,
 	onSpeedChange,
 	onSpeedDelete,
+	selectedVolumeId,
+	selectedVolumeValue,
+	onVolumeChange,
+	onVolumeCommit,
+	onVolumePreset,
+	onVolumeDelete,
+	masterVolume = DEFAULT_MASTER_VOLUME,
+	onMasterVolumeChange,
+	onMasterVolumeCommit,
+	audioMuted = false,
+	onAudioMutedChange,
+	volumeRegionCount = 0,
 	hasWebcam = false,
 	webcamLayoutPreset = DEFAULT_WEBCAM_SETTINGS.layoutPreset,
 	onWebcamLayoutPresetChange,
@@ -639,7 +680,9 @@ export function SettingsPanel({
 
 	const zoomEnabled = Boolean(selectedZoomDepth);
 	const trimEnabled = Boolean(selectedTrimId);
-	const hasTimelineSelection = Boolean(selectedZoomId || selectedTrimId || selectedSpeedId);
+	const hasTimelineSelection = Boolean(
+		selectedZoomId || selectedTrimId || selectedSpeedId || selectedVolumeId,
+	);
 	const hasCursorPanel = showCursorSettings && hasCursorData;
 	const panelModes: Array<{
 		id: SettingsPanelMode;
@@ -651,6 +694,7 @@ export function SettingsPanel({
 		{ id: "effects", label: t("effects.title"), icon: SlidersHorizontal },
 		{ id: "layout", label: t("layout.title"), icon: LayoutPanelTop, disabled: !hasWebcam },
 		{ id: "timeline", label: t("timeline.title"), icon: Brackets },
+		{ id: "audio", label: t("volume.title"), icon: Volume2 },
 		...(hasCursorPanel
 			? [
 					{
@@ -671,7 +715,9 @@ export function SettingsPanel({
 			? t("zoom.level")
 			: selectedSpeedId
 				? t("speed.playbackSpeed")
-				: t("trim.deleteRegion")
+				: selectedVolumeId
+					? t("volume.sectionVolume")
+					: t("trim.deleteRegion")
 		: activePanelMode === "timeline"
 			? t("timeline.title")
 			: ([...panelModes, exportPanelMode].find((mode) => mode.id === activePanelMode)?.label ??
@@ -1236,6 +1282,77 @@ export function SettingsPanel({
 									{t("speed.deleteRegion")}
 								</Button>
 							)}
+						</div>
+					)}
+
+					{selectedVolumeId && (
+						<div className="editor-panel-section mb-3 space-y-3 px-1">
+							<div className="flex items-center justify-between">
+								<span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+									{t("volume.sectionVolume")}
+								</span>
+								{selectedVolumeValue != null && (
+									<span className="rounded-full border border-[#0ea5e9]/25 bg-[#0ea5e9]/10 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-[#38bdf8]">
+										{formatVolumePercent(selectedVolumeValue)}
+									</span>
+								)}
+							</div>
+							<div className="grid grid-cols-4 gap-1">
+								{VOLUME_OPTIONS.map((option) => {
+									const isActive = selectedVolumeValue === option.volume;
+									return (
+										<Button
+											key={option.volume}
+											type="button"
+											onClick={() => onVolumePreset?.(option.volume)}
+											className={cn(
+												"h-8 w-full rounded-lg border px-1 text-center transition-all duration-150 ease-out",
+												isActive
+													? "border-[#0ea5e9]/70 bg-[#0ea5e9] text-white shadow-[0_8px_20px_rgba(14,165,233,0.16)]"
+													: "border-white/[0.06] bg-white/[0.035] text-slate-400 hover:bg-white/[0.075] hover:border-white/15 hover:text-slate-200",
+											)}
+										>
+											{option.volume === 0 ? (
+												<VolumeX className="w-3.5 h-3.5 mx-auto" />
+											) : (
+												<span className="text-[11px] font-semibold">{option.label}</span>
+											)}
+										</Button>
+									);
+								})}
+							</div>
+							<div className="p-2 rounded-lg editor-control-surface">
+								<div className="flex items-center justify-between mb-1">
+									<div className="text-[10px] font-medium text-slate-300">
+										{t("volume.customVolume")}
+									</div>
+									<span className="text-[10px] text-slate-500 font-mono">
+										{formatVolumePercent(selectedVolumeValue ?? 1)}
+									</span>
+								</div>
+								<Slider
+									value={[selectedVolumeValue ?? 1]}
+									onValueChange={(values) => onVolumeChange?.(clampAudioVolume(values[0]))}
+									onValueCommit={() => onVolumeCommit?.()}
+									min={MIN_AUDIO_VOLUME}
+									max={MAX_AUDIO_VOLUME}
+									step={0.01}
+									className="w-full [&_[role=slider]]:bg-[#0ea5e9] [&_[role=slider]]:border-[#0ea5e9] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+								/>
+							</div>
+							<p className="text-[10px] leading-relaxed text-slate-500">
+								{t("volume.fadeNote")}
+								{(selectedVolumeValue ?? 1) > 1 ? ` ${t("volume.boostNote")}` : ""}
+							</p>
+							<Button
+								onClick={() => selectedVolumeId && onVolumeDelete?.(selectedVolumeId)}
+								variant="destructive"
+								size="sm"
+								className="w-full gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all h-8 text-xs"
+							>
+								<Trash2 className="w-3 h-3" />
+								{t("volume.deleteRegion")}
+							</Button>
 						</div>
 					)}
 
@@ -1840,6 +1957,65 @@ export function SettingsPanel({
 												</TabsContent>
 											</div>
 										</Tabs>
+									</AccordionContent>
+								</AccordionItem>
+							)}
+							{activePanelMode === "audio" && (
+								<AccordionItem value="audio" className="editor-panel-section px-3">
+									<AccordionTrigger className="py-2.5 hover:no-underline">
+										<div className="flex items-center gap-2">
+											<Volume2 className="w-4 h-4 text-[#34B27B]" />
+											<span className="text-xs font-medium">{t("volume.title")}</span>
+										</div>
+									</AccordionTrigger>
+									<AccordionContent className="pb-3 space-y-2">
+										<div className="flex items-center justify-between p-2 rounded-lg editor-control-surface">
+											<div className="text-[10px] font-medium text-slate-300">
+												{t("volume.muteAll")}
+											</div>
+											<Switch
+												checked={audioMuted}
+												onCheckedChange={(checked) => onAudioMutedChange?.(checked)}
+												className="data-[state=checked]:bg-[#34B27B] scale-90 ml-2 shrink-0"
+											/>
+										</div>
+										<div
+											className={cn(
+												"p-2 rounded-lg editor-control-surface",
+												audioMuted && "opacity-40 pointer-events-none",
+											)}
+										>
+											<div className="flex items-center justify-between mb-1">
+												<div className="text-[10px] font-medium text-slate-300">
+													{t("volume.masterVolume")}
+												</div>
+												<span className="text-[10px] text-slate-500 font-mono">
+													{formatVolumePercent(masterVolume)}
+												</span>
+											</div>
+											<Slider
+												value={[masterVolume]}
+												onValueChange={(values) =>
+													onMasterVolumeChange?.(clampAudioVolume(values[0]))
+												}
+												onValueCommit={() => onMasterVolumeCommit?.()}
+												min={MIN_AUDIO_VOLUME}
+												max={MAX_AUDIO_VOLUME}
+												step={0.01}
+												className="w-full [&_[role=slider]]:bg-[#34B27B] [&_[role=slider]]:border-[#34B27B] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+											/>
+										</div>
+										<div className="flex items-center justify-between p-2 rounded-lg editor-control-surface">
+											<div className="text-[10px] font-medium text-slate-300">
+												{t("volume.regionsSummary")}
+											</div>
+											<span className="text-[10px] text-slate-500 font-mono">
+												{volumeRegionCount}
+											</span>
+										</div>
+										<p className="px-1 text-[10px] leading-relaxed text-slate-500">
+											{t("volume.howTo")}
+										</p>
 									</AccordionContent>
 								</AccordionItem>
 							)}

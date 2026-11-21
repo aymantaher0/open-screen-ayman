@@ -13,6 +13,11 @@ export interface BackgroundWaveformProps {
 	topInset?: number;
 	/** Inset from canvas bottom so the waveform aligns with item content bottom. Defaults to 0. */
 	bottomInset?: number;
+	/**
+	 * Optional gain curve (source-timeline ms → linear gain). When set, the waveform
+	 * shows the adjusted level and marks boosted audio that will be limited.
+	 */
+	gainAt?: (timeMs: number) => number;
 }
 
 /**
@@ -29,6 +34,7 @@ export default function BackgroundWaveform({
 	videoDurationMs,
 	topInset = 0,
 	bottomInset = 0,
+	gainAt,
 }: BackgroundWaveformProps) {
 	const { range } = useTimelineContext();
 	const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -94,6 +100,7 @@ export default function BackgroundWaveform({
 		// Rectified: amplitude = max(|min|, |max|), normalized to the loudest peak
 		// and gamma-curved, drawn upward from bottomY.
 		const colY = new Float32Array(W);
+		const clipped = new Uint8Array(W);
 		for (let x = 0; x < W; x++) {
 			const startMs = range.start + (x / W) * rangeMs;
 			const endMs = range.start + ((x + 1) / W) * rangeMs;
@@ -107,7 +114,14 @@ export default function BackgroundWaveform({
 				if (a > absMax) absMax = a;
 				if (b > absMax) absMax = b;
 			}
-			const normalized = Math.min(1, absMax * normFactor);
+			let level = absMax * normFactor;
+			if (gainAt) {
+				const gain = gainAt((startMs + endMs) / 2);
+				level *= gain;
+				// Peaks pushed past full scale get limited on export; flag them.
+				if (absMax * gain > 1) clipped[x] = 1;
+			}
+			const normalized = Math.min(1, level);
 			const display = normalized > 0 ? normalized ** WAVEFORM_GAMMA : 0;
 			colY[x] = bottomY - display * amp;
 		}
@@ -132,7 +146,14 @@ export default function BackgroundWaveform({
 		ctx.strokeStyle = "rgba(74, 222, 128, 0.85)";
 		ctx.lineWidth = 1;
 		ctx.stroke();
-	}, [peaks, normFactor, range, canvasSize, videoDurationMs, topInset, bottomInset]);
+
+		if (gainAt) {
+			ctx.fillStyle = "rgba(248, 113, 113, 0.9)";
+			for (let x = 0; x < W; x++) {
+				if (clipped[x]) ctx.fillRect(x, topY, 1, 2);
+			}
+		}
+	}, [peaks, normFactor, range, canvasSize, videoDurationMs, topInset, bottomInset, gainAt]);
 
 	return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none w-full h-full" />;
 }

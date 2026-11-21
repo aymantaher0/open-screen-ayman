@@ -1,3 +1,12 @@
+> [!Important]
+> **This is a personal fork (open-screen-ayman)** of OpenScreen 1.5.0 with extra audio controls:
+> - **Volume regions** — a new timeline lane. Press **V** (or the speaker button) to add a region, then set it from mute (0%) up to 200%. Edges fade over 40 ms so there are no clicks, and boosted audio is limited instead of distorting.
+> - **Master volume and Mute all** — in the new Audio tab (speaker icon) in the settings rail.
+> - The waveform in the volume lane shows the adjusted level; red ticks mark peaks that will be limited.
+> - Volume is applied in the preview and in MP4 export, and is saved in project files.
+>
+> To get a Mac build, open **Actions → Build macOS (unsigned, personal use) → Run workflow**, then download the DMG from the run. The first time you open the app, right-click it and choose **Open**.
+
 > [!Note]
 > OpenScreen is now archived and no longer maintained. if you are looking for something similar, checkout : https://github.com/getopenscreen/openscreen maintained by some folks, nice enough to continue this project in their own way.
 > 

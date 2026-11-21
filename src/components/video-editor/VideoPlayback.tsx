@@ -65,6 +65,7 @@ import {
 	rotation3DPerspective,
 	type SpeedRegion,
 	type TrimRegion,
+	type VolumeRegion,
 	type ZoomFocus,
 	type ZoomRegion,
 } from "./types";
@@ -79,6 +80,7 @@ import { clampFocusToScale } from "./videoPlayback/focusUtils";
 import { layoutVideoContent as layoutVideoContentUtil } from "./videoPlayback/layoutUtils";
 import { clamp01 } from "./videoPlayback/mathUtils";
 import { updateOverlayIndicator } from "./videoPlayback/overlayUtils";
+import { usePreviewVolume } from "./videoPlayback/usePreviewVolume";
 import { createVideoEventHandlers } from "./videoPlayback/videoEventHandlers";
 import { findDominantRegion } from "./videoPlayback/zoomRegionUtils";
 import { createZoomSpringState, resetZoomSpring, stepZoomSpring } from "./videoPlayback/zoomSpring";
@@ -122,6 +124,9 @@ interface VideoPlaybackProps {
 	cropRegion?: import("./types").CropRegion;
 	trimRegions?: TrimRegion[];
 	speedRegions?: SpeedRegion[];
+	volumeRegions?: VolumeRegion[];
+	masterVolume?: number;
+	audioMuted?: boolean;
 	aspectRatio: AspectRatio;
 	cursorRecordingData?: CursorRecordingData | null;
 	annotationRegions?: AnnotationRegion[];
@@ -204,6 +209,8 @@ type VideoElementWithAudioTracks = HTMLVideoElement & {
 	audioTracks?: AudioTrackListLike;
 };
 
+const EMPTY_VOLUME_REGIONS: VolumeRegion[] = [];
+
 function enableAllPreviewAudioTracks(video: HTMLVideoElement) {
 	const audioTracks = (video as VideoElementWithAudioTracks).audioTracks;
 	if (!audioTracks || audioTracks.length <= 1) {
@@ -249,6 +256,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			cropRegion,
 			trimRegions = [],
 			speedRegions = [],
+			volumeRegions = EMPTY_VOLUME_REGIONS,
+			masterVolume = 1,
+			audioMuted = false,
 			aspectRatio,
 			cursorRecordingData,
 			annotationRegions = [],
@@ -343,6 +353,14 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		const layoutVideoContentRef = useRef<(() => void) | null>(null);
 		const trimRegionsRef = useRef<TrimRegion[]>([]);
 		const speedRegionsRef = useRef<SpeedRegion[]>([]);
+		const { resumePreviewAudio } = usePreviewVolume({
+			videoRef,
+			supplementalAudioRef,
+			volumeRegions,
+			masterVolume,
+			audioMuted,
+			currentTime,
+		});
 		const motionBlurAmountRef = useRef(motionBlurAmount);
 		const cursorOverlayRef = useRef<PixiCursorOverlay | null>(null);
 		const showCursorRef = useRef(showCursor);
@@ -623,6 +641,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				try {
 					allowPlaybackRef.current = true;
 					enableAllPreviewAudioTracks(vid);
+					await resumePreviewAudio();
 					await vid.play().catch((err) => {
 						console.log("PLAY ERROR:", err);
 						throw err;

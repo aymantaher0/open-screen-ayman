@@ -9,6 +9,7 @@ import {
 	Plus,
 	ScanEye,
 	Scissors,
+	Volume2,
 	WandSparkles,
 	ZoomIn,
 } from "lucide-react";
@@ -25,12 +26,13 @@ import {
 import { useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { useAudioPeaks } from "@/hooks/useAudioPeaks";
+import { createVolumeEnvelope } from "@/lib/audio/volumeEnvelope";
 import { matchesShortcut } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 import { ASPECT_RATIOS, type AspectRatio, getAspectRatioLabel } from "@/utils/aspectRatioUtils";
 import { formatShortcut } from "@/utils/platformUtils";
 import { BLUR_REGIONS_ENABLED } from "../featureFlags";
-import type { AnnotationRegion, SpeedRegion, TrimRegion, ZoomRegion } from "../types";
+import type { AnnotationRegion, SpeedRegion, TrimRegion, VolumeRegion, ZoomRegion } from "../types";
 import BackgroundWaveform from "./BackgroundWaveform";
 import Item from "./Item";
 import KeyframeMarkers from "./KeyframeMarkers";
@@ -42,6 +44,7 @@ const TRIM_ROW_ID = "row-trim";
 const ANNOTATION_ROW_ID = "row-annotation";
 const BLUR_ROW_ID = "row-blur";
 const SPEED_ROW_ID = "row-speed";
+const VOLUME_ROW_ID = "row-volume";
 const FALLBACK_RANGE_MS = 1000;
 const TARGET_MARKER_COUNT = 12;
 
@@ -86,6 +89,14 @@ interface TimelineEditorProps {
 	onSpeedDelete?: (id: string) => void;
 	selectedSpeedId?: string | null;
 	onSelectSpeed?: (id: string | null) => void;
+	volumeRegions?: VolumeRegion[];
+	onVolumeAdded?: (span: Span) => void;
+	onVolumeSpanChange?: (id: string, span: Span) => void;
+	onVolumeDelete?: (id: string) => void;
+	selectedVolumeId?: string | null;
+	onSelectVolume?: (id: string | null) => void;
+	masterVolume?: number;
+	audioMuted?: boolean;
 	aspectRatio: AspectRatio;
 	onAspectRatioChange: (aspectRatio: AspectRatio) => void;
 	videoUrl?: string;
@@ -111,8 +122,9 @@ interface TimelineRenderItem {
 	zoomDepth?: number;
 	zoomCustomScale?: number;
 	speedValue?: number;
+	volumeValue?: number;
 	isAutoFocus?: boolean;
-	variant: "zoom" | "trim" | "annotation" | "speed" | "blur";
+	variant: "zoom" | "trim" | "annotation" | "speed" | "blur" | "volume";
 }
 
 const SCALE_CANDIDATES = [
@@ -563,14 +575,17 @@ function Timeline({
 	onSelectAnnotation,
 	onSelectBlur,
 	onSelectSpeed,
+	onSelectVolume,
 	selectedZoomId,
 	selectedTrimId,
 	selectedAnnotationId,
 	selectedBlurId,
 	selectedSpeedId,
+	selectedVolumeId,
 	keyframes = [],
 	videoUrl,
 	showTrimWaveform = false,
+	volumeGainAt,
 }: {
 	items: TimelineRenderItem[];
 	videoDurationMs: number;
@@ -582,14 +597,17 @@ function Timeline({
 	onSelectAnnotation?: (id: string | null) => void;
 	onSelectBlur?: (id: string | null) => void;
 	onSelectSpeed?: (id: string | null) => void;
+	onSelectVolume?: (id: string | null) => void;
 	selectedZoomId: string | null;
 	selectedTrimId?: string | null;
 	selectedAnnotationId?: string | null;
 	selectedBlurId?: string | null;
 	selectedSpeedId?: string | null;
+	selectedVolumeId?: string | null;
 	keyframes?: { id: string; time: number }[];
 	videoUrl?: string;
 	showTrimWaveform?: boolean;
+	volumeGainAt?: (timeMs: number) => number;
 }) {
 	const t = useScopedT("timeline");
 	const { setTimelineRef, style, sidebarWidth, range, pixelsToValue } = useTimelineContext();
@@ -630,7 +648,8 @@ function Timeline({
 		onSelectAnnotation?.(null);
 		onSelectBlur?.(null);
 		onSelectSpeed?.(null);
-	}, [onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectBlur, onSelectSpeed]);
+		onSelectVolume?.(null);
+	}, [onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectBlur, onSelectSpeed, onSelectVolume]);
 
 	const handleTimelineClick = useCallback(
 		(e: React.MouseEvent<HTMLDivElement>) => {
@@ -749,6 +768,7 @@ function Timeline({
 	const annotationItems = items.filter((item) => item.rowId === ANNOTATION_ROW_ID);
 	const blurItems = items.filter((item) => item.rowId === BLUR_ROW_ID);
 	const speedItems = items.filter((item) => item.rowId === SPEED_ROW_ID);
+	const volumeItems = items.filter((item) => item.rowId === VOLUME_ROW_ID);
 
 	return (
 		<div
@@ -878,6 +898,38 @@ function Timeline({
 					</Item>
 				))}
 			</Row>
+
+			<Row
+				id={VOLUME_ROW_ID}
+				isEmpty={volumeItems.length === 0}
+				hint={t("hints.pressVolume")}
+				background={
+					showTrimWaveform ? (
+						<BackgroundWaveform
+							peaks={peaks}
+							videoDurationMs={videoDurationMs}
+							topInset={3}
+							bottomInset={3}
+							gainAt={volumeGainAt}
+						/>
+					) : undefined
+				}
+			>
+				{volumeItems.map((item) => (
+					<Item
+						id={item.id}
+						key={item.id}
+						rowId={item.rowId}
+						span={item.span}
+						isSelected={item.id === selectedVolumeId}
+						onSelect={() => onSelectVolume?.(item.id)}
+						variant="volume"
+						volumeValue={item.volumeValue}
+					>
+						{item.label}
+					</Item>
+				))}
+			</Row>
 		</div>
 	);
 }
@@ -921,6 +973,14 @@ export default function TimelineEditor({
 	onSpeedDelete,
 	selectedSpeedId,
 	onSelectSpeed,
+	volumeRegions = [],
+	onVolumeAdded,
+	onVolumeSpanChange,
+	onVolumeDelete,
+	selectedVolumeId,
+	onSelectVolume,
+	masterVolume = 1,
+	audioMuted = false,
 	aspectRatio,
 	onAspectRatioChange,
 	videoUrl,
@@ -1011,6 +1071,17 @@ export default function TimelineEditor({
 		onSelectSpeed(null);
 	}, [selectedSpeedId, onSpeedDelete, onSelectSpeed]);
 
+	const deleteSelectedVolume = useCallback(() => {
+		if (!selectedVolumeId || !onVolumeDelete || !onSelectVolume) return;
+		onVolumeDelete(selectedVolumeId);
+		onSelectVolume(null);
+	}, [selectedVolumeId, onVolumeDelete, onSelectVolume]);
+
+	const volumeGainAt = useMemo(() => {
+		const envelope = createVolumeEnvelope(volumeRegions, { masterVolume, muted: audioMuted });
+		return envelope.isIdentity ? undefined : envelope.gainAt;
+	}, [volumeRegions, masterVolume, audioMuted]);
+
 	useEffect(() => {
 		setRange(createInitialRange(totalMs));
 	}, [totalMs]);
@@ -1020,9 +1091,11 @@ export default function TimelineEditor({
 	const zoomRegionsRef = useRef(zoomRegions);
 	const trimRegionsRef = useRef(trimRegions);
 	const speedRegionsRef = useRef(speedRegions);
+	const volumeRegionsRef = useRef(volumeRegions);
 	zoomRegionsRef.current = zoomRegions;
 	trimRegionsRef.current = trimRegions;
 	speedRegionsRef.current = speedRegions;
+	volumeRegionsRef.current = volumeRegions;
 
 	useEffect(() => {
 		if (totalMs === 0 || safeMinDurationMs <= 0) {
@@ -1064,7 +1137,26 @@ export default function TimelineEditor({
 				onSpeedSpanChange?.(region.id, { start: normalizedStart, end: normalizedEnd });
 			}
 		});
-	}, [totalMs, safeMinDurationMs, onZoomSpanChange, onTrimSpanChange, onSpeedSpanChange]);
+
+		volumeRegionsRef.current.forEach((region) => {
+			const clampedStart = Math.max(0, Math.min(region.startMs, totalMs));
+			const minEnd = clampedStart + safeMinDurationMs;
+			const clampedEnd = Math.min(totalMs, Math.max(minEnd, region.endMs));
+			const normalizedStart = Math.max(0, Math.min(clampedStart, totalMs - safeMinDurationMs));
+			const normalizedEnd = Math.max(minEnd, Math.min(clampedEnd, totalMs));
+
+			if (normalizedStart !== region.startMs || normalizedEnd !== region.endMs) {
+				onVolumeSpanChange?.(region.id, { start: normalizedStart, end: normalizedEnd });
+			}
+		});
+	}, [
+		totalMs,
+		safeMinDurationMs,
+		onZoomSpanChange,
+		onTrimSpanChange,
+		onSpeedSpanChange,
+		onVolumeSpanChange,
+	]);
 
 	const hasOverlap = useCallback(
 		(newSpan: Span, excludeId?: string): boolean => {
@@ -1073,12 +1165,13 @@ export default function TimelineEditor({
 			const isAnnotationItem = annotationRegions.some((r) => r.id === excludeId);
 			const isBlurItem = blurRegions.some((r) => r.id === excludeId);
 			const isSpeedItem = speedRegions.some((r) => r.id === excludeId);
+			const isVolumeItem = volumeRegions.some((r) => r.id === excludeId);
 
 			if (isAnnotationItem || isBlurItem) {
 				return false;
 			}
 
-			const checkOverlap = (regions: (ZoomRegion | TrimRegion | SpeedRegion)[]) => {
+			const checkOverlap = (regions: (ZoomRegion | TrimRegion | SpeedRegion | VolumeRegion)[]) => {
 				return regions.some((region) => {
 					if (region.id === excludeId) return false;
 					// True intersection, adjacency is allowed
@@ -1098,9 +1191,13 @@ export default function TimelineEditor({
 				return checkOverlap(speedRegions);
 			}
 
+			if (isVolumeItem) {
+				return checkOverlap(volumeRegions);
+			}
+
 			return false;
 		},
-		[zoomRegions, trimRegions, annotationRegions, blurRegions, speedRegions],
+		[zoomRegions, trimRegions, annotationRegions, blurRegions, speedRegions, volumeRegions],
 	);
 
 	// 5% of the timeline or 1000ms, whichever is larger, so it's wide enough to grab.
@@ -1204,6 +1301,43 @@ export default function TimelineEditor({
 		t,
 	]);
 
+	const handleAddVolume = useCallback(() => {
+		if (!videoDuration || videoDuration === 0 || totalMs === 0 || !onVolumeAdded) {
+			return;
+		}
+
+		const defaultDuration = Math.min(defaultRegionDurationMs, totalMs);
+		if (defaultDuration <= 0) {
+			return;
+		}
+
+		const startPos = Math.max(0, Math.min(currentTimeMs, totalMs));
+		const sorted = [...volumeRegions].sort((a, b) => a.startMs - b.startMs);
+		const nextRegion = sorted.find((region) => region.startMs > startPos);
+		const gapToNext = nextRegion ? nextRegion.startMs - startPos : totalMs - startPos;
+
+		const isOverlapping = sorted.some(
+			(region) => startPos >= region.startMs && startPos < region.endMs,
+		);
+		if (isOverlapping || gapToNext <= 0) {
+			toast.error(t("errors.cannotPlaceVolume"), {
+				description: t("errors.volumeExistsAtLocation"),
+			});
+			return;
+		}
+
+		const actualDuration = Math.min(defaultRegionDurationMs, gapToNext);
+		onVolumeAdded({ start: startPos, end: startPos + actualDuration });
+	}, [
+		videoDuration,
+		totalMs,
+		currentTimeMs,
+		volumeRegions,
+		onVolumeAdded,
+		defaultRegionDurationMs,
+		t,
+	]);
+
 	const handleAddAnnotation = useCallback(() => {
 		if (!videoDuration || videoDuration === 0 || totalMs === 0 || !onAnnotationAdded) {
 			return;
@@ -1260,6 +1394,9 @@ export default function TimelineEditor({
 			if (matchesShortcut(e, keyShortcuts.addSpeed, isMac)) {
 				handleAddSpeed();
 			}
+			if (matchesShortcut(e, keyShortcuts.addVolume, isMac)) {
+				handleAddVolume();
+			}
 
 			// Tab cycles through overlapping annotations at the current time
 			if (e.key === "Tab" && annotationRegions.length > 0) {
@@ -1300,6 +1437,8 @@ export default function TimelineEditor({
 					deleteSelectedBlur();
 				} else if (selectedSpeedId) {
 					deleteSelectedSpeed();
+				} else if (selectedVolumeId) {
+					deleteSelectedVolume();
 				}
 			}
 		};
@@ -1312,18 +1451,21 @@ export default function TimelineEditor({
 		handleAddAnnotation,
 		handleAddBlur,
 		handleAddSpeed,
+		handleAddVolume,
 		deleteSelectedKeyframe,
 		deleteSelectedZoom,
 		deleteSelectedTrim,
 		deleteSelectedAnnotation,
 		deleteSelectedBlur,
 		deleteSelectedSpeed,
+		deleteSelectedVolume,
 		selectedKeyframeId,
 		selectedZoomId,
 		selectedTrimId,
 		selectedAnnotationId,
 		selectedBlurId,
 		selectedSpeedId,
+		selectedVolumeId,
 		annotationRegions,
 		currentTime,
 		onSelectAnnotation,
@@ -1400,8 +1542,17 @@ export default function TimelineEditor({
 			variant: "speed",
 		}));
 
-		return [...zooms, ...trims, ...annotations, ...blurs, ...speeds];
-	}, [zoomRegions, trimRegions, annotationRegions, blurRegions, speedRegions, t]);
+		const volumes: TimelineRenderItem[] = volumeRegions.map((region, index) => ({
+			id: region.id,
+			rowId: VOLUME_ROW_ID,
+			span: { start: region.startMs, end: region.endMs },
+			label: t("labels.volumeItem", { index: String(index + 1) }),
+			volumeValue: region.volume,
+			variant: "volume",
+		}));
+
+		return [...zooms, ...trims, ...annotations, ...blurs, ...speeds, ...volumes];
+	}, [zoomRegions, trimRegions, annotationRegions, blurRegions, speedRegions, volumeRegions, t]);
 
 	// Spans that participate in overlap resolution (clampToNeighbours). Annotation
 	// and blur are excluded since they may overlap and shouldn't constrain a drag.
@@ -1420,8 +1571,11 @@ export default function TimelineEditor({
 			end: r.endMs,
 		}));
 		const blurs = blurRegions.map((r) => ({ id: r.id, start: r.startMs, end: r.endMs }));
-		return [...annotations, ...blurs];
-	}, [annotationRegions, blurRegions]);
+		// Volume regions live on their own lane and may sit under zooms/speeds, so they
+		// snap to other edges but never clamp against them.
+		const volumes = volumeRegions.map((r) => ({ id: r.id, start: r.startMs, end: r.endMs }));
+		return [...annotations, ...blurs, ...volumes];
+	}, [annotationRegions, blurRegions, volumeRegions]);
 
 	const keyframeTimesMs = useMemo(() => keyframes.map((kf) => kf.time), [keyframes]);
 
@@ -1433,6 +1587,8 @@ export default function TimelineEditor({
 				onTrimSpanChange?.(id, span);
 			} else if (speedRegions.some((r) => r.id === id)) {
 				onSpeedSpanChange?.(id, span);
+			} else if (volumeRegions.some((r) => r.id === id)) {
+				onVolumeSpanChange?.(id, span);
 			} else if (annotationRegions.some((r) => r.id === id)) {
 				onAnnotationSpanChange?.(id, span);
 			} else if (blurRegions.some((r) => r.id === id)) {
@@ -1443,11 +1599,13 @@ export default function TimelineEditor({
 			zoomRegions,
 			trimRegions,
 			speedRegions,
+			volumeRegions,
 			annotationRegions,
 			blurRegions,
 			onZoomSpanChange,
 			onTrimSpanChange,
 			onSpeedSpanChange,
+			onVolumeSpanChange,
 			onAnnotationSpanChange,
 			onBlurSpanChange,
 		],
@@ -1560,6 +1718,15 @@ export default function TimelineEditor({
 					>
 						<Gauge className="w-4 h-4" />
 					</Button>
+					<Button
+						onClick={handleAddVolume}
+						variant="ghost"
+						size="icon"
+						className="h-7 w-7 rounded-lg text-slate-400 hover:text-[#38bdf8] hover:bg-[#38bdf8]/10 transition-all"
+						title={t("buttons.addVolume")}
+					>
+						<Volume2 className="w-4 h-4" />
+					</Button>
 					{onGenerateCaptions && (
 						<Button
 							onClick={onGenerateCaptions}
@@ -1652,14 +1819,17 @@ export default function TimelineEditor({
 						onSelectAnnotation={onSelectAnnotation}
 						onSelectBlur={onSelectBlur}
 						onSelectSpeed={onSelectSpeed}
+						onSelectVolume={onSelectVolume}
 						selectedZoomId={selectedZoomId}
 						selectedTrimId={selectedTrimId}
 						selectedAnnotationId={selectedAnnotationId}
 						selectedBlurId={selectedBlurId}
 						selectedSpeedId={selectedSpeedId}
+						selectedVolumeId={selectedVolumeId}
 						keyframes={keyframes}
 						videoUrl={videoUrl}
 						showTrimWaveform={showTrimWaveform}
+						volumeGainAt={volumeGainAt}
 					/>
 				</TimelineWrapper>
 			</div>

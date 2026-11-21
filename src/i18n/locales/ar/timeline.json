@@ -5,14 +5,16 @@
 		"addTrim": "إضافة قص (T)",
 		"addAnnotation": "إضافة شرح (A)",
 		"addBlur": "إضافة تمويه (B)",
-		"addSpeed": "إضافة سرعة (S)"
+		"addSpeed": "إضافة سرعة (S)",
+		"addVolume": "إضافة مستوى صوت (V)"
 	},
 	"hints": {
 		"pressZoom": "اضغط Z لإضافة تكبير",
 		"pressTrim": "اضغط T لإضافة قص",
 		"pressAnnotation": "اضغط A لإضافة شرح",
 		"pressBlur": "اضغط B لإضافة منطقة تمويه",
-		"pressSpeed": "اضغط S لإضافة سرعة"
+		"pressSpeed": "اضغط S لإضافة سرعة",
+		"pressVolume": "اضغط V لتعديل صوت جزء"
 	},
 	"labels": {
 		"pan": "تحريك",
@@ -25,7 +27,10 @@
 		"annotationItem": "شرح",
 		"blurItem": "تمويه {{index}}",
 		"imageItem": "صورة",
-		"emptyText": "نص فارغ"
+		"emptyText": "نص فارغ",
+		"volume": "الصوت",
+		"volumeItem": "صوت {{index}}",
+		"muted": "مكتوم"
 	},
 	"emptyState": {
 		"noVideo": "لم يتم تحميل أي فيديو",
@@ -46,7 +51,9 @@
 		"cannotPlaceTrim": "لا يمكن وضع القص هنا",
 		"trimExistsAtLocation": "يوجد قص بالفعل في هذا الموقع أو لا توجد مساحة كافية متاحة.",
 		"cannotPlaceSpeed": "لا يمكن وضع السرعة هنا",
-		"speedExistsAtLocation": "توجد منطقة سرعة بالفعل في هذا الموقع أو لا توجد مساحة كافية متاحة."
+		"speedExistsAtLocation": "توجد منطقة سرعة بالفعل في هذا الموقع أو لا توجد مساحة كافية متاحة.",
+		"cannotPlaceVolume": "لا يمكن وضع منطقة صوت هنا",
+		"volumeExistsAtLocation": "توجد منطقة صوت بالفعل في هذا المكان أو لا توجد مساحة كافية."
 	},
 	"success": {
 		"addedZoomSuggestions": "تمت إضافة {{count}} اقتراح تكبير بناءً على المؤشر",

@@ -92,6 +92,7 @@ import TimelineEditor from "./timeline/TimelineEditor";
 import { buildAutoZoomSuggestions } from "./timeline/zoomSuggestionUtils";
 import {
 	type AnnotationRegion,
+	type AudioVolume,
 	type BlurData,
 	clampFocusToDepth,
 	DEFAULT_ANNOTATION_POSITION,
@@ -100,12 +101,14 @@ import {
 	DEFAULT_BLUR_DATA,
 	DEFAULT_FIGURE_DATA,
 	DEFAULT_PLAYBACK_SPEED,
+	DEFAULT_REGION_VOLUME,
 	DEFAULT_ZOOM_DEPTH,
 	type FigureData,
 	type PlaybackSpeed,
 	type Rotation3DPreset,
 	type SpeedRegion,
 	type TrimRegion,
+	type VolumeRegion,
 	ZOOM_DEPTH_SCALES,
 	type ZoomDepth,
 	type ZoomFocus,
@@ -193,6 +196,9 @@ export default function VideoEditor() {
 		autoFocusAll,
 		trimRegions,
 		speedRegions,
+		volumeRegions,
+		masterVolume,
+		audioMuted,
 		annotationRegions,
 		cropRegion,
 		wallpaper,
@@ -230,6 +236,7 @@ export default function VideoEditor() {
 	const [isPreviewingZoom, setIsPreviewingZoom] = useState(false);
 	const [selectedTrimId, setSelectedTrimId] = useState<string | null>(null);
 	const [selectedSpeedId, setSelectedSpeedId] = useState<string | null>(null);
+	const [selectedVolumeId, setSelectedVolumeId] = useState<string | null>(null);
 	const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
 	const [selectedBlurId, setSelectedBlurId] = useState<string | null>(null);
 	const [isExporting, setIsExporting] = useState(false);
@@ -299,6 +306,7 @@ export default function VideoEditor() {
 	const nextZoomIdRef = useRef(1);
 	const nextTrimIdRef = useRef(1);
 	const nextSpeedIdRef = useRef(1);
+	const nextVolumeIdRef = useRef(1);
 
 	const { shortcuts, isMac } = useShortcuts();
 	// Windows recordings include captured cursor assets. macOS hides the system
@@ -374,6 +382,7 @@ export default function VideoEditor() {
 				...normalizedEditor.zoomRegions.map((region) => region.endMs),
 				...normalizedEditor.trimRegions.map((region) => region.endMs),
 				...normalizedEditor.speedRegions.map((region) => region.endMs),
+				...normalizedEditor.volumeRegions.map((region) => region.endMs),
 				...normalizedEditor.annotationRegions.map((region) => region.endMs),
 			);
 
@@ -412,6 +421,9 @@ export default function VideoEditor() {
 				autoFocusAll: normalizedEditor.autoFocusAll,
 				trimRegions: normalizedEditor.trimRegions,
 				speedRegions: normalizedEditor.speedRegions,
+				volumeRegions: normalizedEditor.volumeRegions,
+				masterVolume: normalizedEditor.masterVolume,
+				audioMuted: normalizedEditor.audioMuted,
 				annotationRegions: normalizedEditor.annotationRegions,
 				aspectRatio: normalizedEditor.aspectRatio,
 				webcamLayoutPreset: normalizedEditor.webcamLayoutPreset,
@@ -431,6 +443,7 @@ export default function VideoEditor() {
 			setSelectedZoomId(null);
 			setSelectedTrimId(null);
 			setSelectedSpeedId(null);
+			setSelectedVolumeId(null);
 			setSelectedAnnotationId(null);
 			setSelectedBlurId(null);
 
@@ -445,6 +458,10 @@ export default function VideoEditor() {
 			nextSpeedIdRef.current = deriveNextId(
 				"speed",
 				normalizedEditor.speedRegions.map((region) => region.id),
+			);
+			nextVolumeIdRef.current = deriveNextId(
+				"volume",
+				normalizedEditor.volumeRegions.map((region) => region.id),
 			);
 			nextAnnotationIdRef.current = deriveNextId(
 				"annotation",
@@ -489,6 +506,9 @@ export default function VideoEditor() {
 			autoFocusAll,
 			trimRegions,
 			speedRegions,
+			volumeRegions,
+			masterVolume,
+			audioMuted,
 			annotationRegions,
 			aspectRatio,
 			webcamLayoutPreset,
@@ -520,6 +540,9 @@ export default function VideoEditor() {
 		autoFocusAll,
 		trimRegions,
 		speedRegions,
+		volumeRegions,
+		masterVolume,
+		audioMuted,
 		annotationRegions,
 		aspectRatio,
 		webcamLayoutPreset,
@@ -648,6 +671,9 @@ export default function VideoEditor() {
 				autoFocusAll,
 				trimRegions,
 				speedRegions,
+				volumeRegions,
+				masterVolume,
+				audioMuted,
 				annotationRegions,
 				aspectRatio,
 				webcamLayoutPreset,
@@ -713,6 +739,9 @@ export default function VideoEditor() {
 			autoFocusAll,
 			trimRegions,
 			speedRegions,
+			volumeRegions,
+			masterVolume,
+			audioMuted,
 			annotationRegions,
 			aspectRatio,
 			webcamLayoutPreset,
@@ -848,6 +877,7 @@ export default function VideoEditor() {
 		setSelectedZoomId(null);
 		setSelectedTrimId(null);
 		setSelectedSpeedId(null);
+		setSelectedVolumeId(null);
 		setSelectedAnnotationId(null);
 		setSelectedBlurId(null);
 		// Reset playback.
@@ -865,6 +895,7 @@ export default function VideoEditor() {
 		nextZoomIdRef.current = 1;
 		nextTrimIdRef.current = 1;
 		nextSpeedIdRef.current = 1;
+		nextVolumeIdRef.current = 1;
 		nextAnnotationIdRef.current = 1;
 		nextAnnotationZIndexRef.current = 1;
 	}, [resetState]);
@@ -975,6 +1006,7 @@ export default function VideoEditor() {
 		if (id) {
 			setSelectedTrimId(null);
 			setSelectedSpeedId(null);
+			setSelectedVolumeId(null);
 			setSelectedAnnotationId(null);
 			setSelectedBlurId(null);
 		}
@@ -985,6 +1017,7 @@ export default function VideoEditor() {
 		if (id) {
 			setSelectedZoomId(null);
 			setSelectedSpeedId(null);
+			setSelectedVolumeId(null);
 			setSelectedAnnotationId(null);
 			setSelectedBlurId(null);
 		}
@@ -996,6 +1029,7 @@ export default function VideoEditor() {
 			setSelectedZoomId(null);
 			setSelectedTrimId(null);
 			setSelectedSpeedId(null);
+			setSelectedVolumeId(null);
 			setSelectedBlurId(null);
 		}
 	}, []);
@@ -1007,6 +1041,7 @@ export default function VideoEditor() {
 			setSelectedTrimId(null);
 			setSelectedAnnotationId(null);
 			setSelectedSpeedId(null);
+			setSelectedVolumeId(null);
 		}
 	}, []);
 
@@ -1028,6 +1063,7 @@ export default function VideoEditor() {
 			setSelectedZoomId(id);
 			setSelectedTrimId(null);
 			setSelectedSpeedId(null);
+			setSelectedVolumeId(null);
 			setSelectedAnnotationId(null);
 			setSelectedBlurId(null);
 		},
@@ -1132,6 +1168,7 @@ export default function VideoEditor() {
 			setSelectedTrimId(id);
 			setSelectedZoomId(null);
 			setSelectedSpeedId(null);
+			setSelectedVolumeId(null);
 			setSelectedAnnotationId(null);
 			setSelectedBlurId(null);
 		},
@@ -1283,6 +1320,7 @@ export default function VideoEditor() {
 	const handleSelectSpeed = useCallback((id: string | null) => {
 		setSelectedSpeedId(id);
 		if (id) {
+			setSelectedVolumeId(null);
 			setSelectedZoomId(null);
 			setSelectedTrimId(null);
 			setSelectedAnnotationId(null);
@@ -1303,6 +1341,7 @@ export default function VideoEditor() {
 				speedRegions: [...prev.speedRegions, newRegion],
 			}));
 			setSelectedSpeedId(id);
+			setSelectedVolumeId(null);
 			setSelectedZoomId(null);
 			setSelectedTrimId(null);
 			setSelectedAnnotationId(null);
@@ -1352,6 +1391,77 @@ export default function VideoEditor() {
 		[selectedSpeedId, pushState],
 	);
 
+	const handleSelectVolume = useCallback((id: string | null) => {
+		setSelectedVolumeId(id);
+		if (id) {
+			setSelectedZoomId(null);
+			setSelectedTrimId(null);
+			setSelectedSpeedId(null);
+			setSelectedAnnotationId(null);
+			setSelectedBlurId(null);
+		}
+	}, []);
+
+	const handleVolumeAdded = useCallback(
+		(span: Span) => {
+			const id = `volume-${nextVolumeIdRef.current++}`;
+			const newRegion: VolumeRegion = {
+				id,
+				startMs: Math.round(span.start),
+				endMs: Math.round(span.end),
+				volume: DEFAULT_REGION_VOLUME,
+			};
+			pushState((prev) => ({
+				volumeRegions: [...prev.volumeRegions, newRegion],
+			}));
+			handleSelectVolume(id);
+		},
+		[pushState, handleSelectVolume],
+	);
+
+	const handleVolumeSpanChange = useCallback(
+		(id: string, span: Span) => {
+			pushState((prev) => ({
+				volumeRegions: prev.volumeRegions.map((region) =>
+					region.id === id
+						? {
+								...region,
+								startMs: Math.round(span.start),
+								endMs: Math.round(span.end),
+							}
+						: region,
+				),
+			}));
+		},
+		[pushState],
+	);
+
+	const handleVolumeDelete = useCallback(
+		(id: string) => {
+			pushState((prev) => ({
+				volumeRegions: prev.volumeRegions.filter((region) => region.id !== id),
+			}));
+			if (selectedVolumeId === id) {
+				setSelectedVolumeId(null);
+			}
+		},
+		[selectedVolumeId, pushState],
+	);
+
+	// Slider drags stream through updateState and are checkpointed once on commit.
+	const handleVolumeChange = useCallback(
+		(volume: AudioVolume, live = false) => {
+			if (!selectedVolumeId) return;
+			const apply = live ? updateState : pushState;
+			apply((prev) => ({
+				volumeRegions: prev.volumeRegions.map((region) =>
+					region.id === selectedVolumeId ? { ...region, volume } : region,
+				),
+			}));
+		},
+		[selectedVolumeId, pushState, updateState],
+	);
+
 	const handleAnnotationAdded = useCallback(
 		(span: Span) => {
 			const id = `annotation-${nextAnnotationIdRef.current++}`;
@@ -1374,6 +1484,7 @@ export default function VideoEditor() {
 			setSelectedZoomId(null);
 			setSelectedTrimId(null);
 			setSelectedSpeedId(null);
+			setSelectedVolumeId(null);
 			setSelectedBlurId(null);
 		},
 		[pushState],
@@ -1403,6 +1514,7 @@ export default function VideoEditor() {
 			setSelectedZoomId(null);
 			setSelectedTrimId(null);
 			setSelectedSpeedId(null);
+			setSelectedVolumeId(null);
 		},
 		[pushState],
 	);
@@ -1456,6 +1568,7 @@ export default function VideoEditor() {
 			setSelectedZoomId(null);
 			setSelectedTrimId(null);
 			setSelectedSpeedId(null);
+			setSelectedVolumeId(null);
 			setSelectedBlurId(null);
 		},
 		[pushState],
@@ -1522,6 +1635,7 @@ export default function VideoEditor() {
 				setSelectedAnnotationId(null);
 				setSelectedBlurId(id);
 				setSelectedSpeedId(null);
+				setSelectedVolumeId(null);
 			} else if (type !== "blur" && selectedBlurId === id) {
 				setSelectedBlurId(null);
 				setSelectedAnnotationId(id);
@@ -1745,6 +1859,12 @@ export default function VideoEditor() {
 			setSelectedSpeedId(null);
 		}
 	}, [selectedSpeedId, speedRegions]);
+
+	useEffect(() => {
+		if (selectedVolumeId && !volumeRegions.some((region) => region.id === selectedVolumeId)) {
+			setSelectedVolumeId(null);
+		}
+	}, [selectedVolumeId, volumeRegions]);
 
 	const handleShowExportedFile = useCallback(async (filePath: string) => {
 		try {
@@ -1988,6 +2108,8 @@ export default function VideoEditor() {
 						zoomRegions,
 						trimRegions,
 						speedRegions,
+						volumeRegions,
+						audioMix: { masterVolume, muted: audioMuted },
 						showShadow: shadowIntensity > 0,
 						shadowIntensity,
 						showBlur,
@@ -2096,6 +2218,9 @@ export default function VideoEditor() {
 			zoomRegions,
 			trimRegions,
 			speedRegions,
+			volumeRegions,
+			masterVolume,
+			audioMuted,
 			shadowIntensity,
 			showBlur,
 			motionBlurAmount,
@@ -2622,6 +2747,9 @@ export default function VideoEditor() {
 													cursorRecordingData={cursorRecordingData}
 													trimRegions={trimRegions}
 													speedRegions={speedRegions}
+													volumeRegions={volumeRegions}
+													masterVolume={masterVolume}
+													audioMuted={audioMuted}
 													annotationRegions={annotationOnlyRegions}
 													selectedAnnotationId={selectedAnnotationId}
 													onSelectAnnotation={handleSelectAnnotation}
@@ -2793,6 +2921,7 @@ export default function VideoEditor() {
 											setSelectedZoomId(null);
 											setSelectedTrimId(null);
 											setSelectedSpeedId(null);
+											setSelectedVolumeId(null);
 										}}
 										selectedAnnotationId={selectedAnnotationId}
 										annotationRegions={annotationOnlyRegions}
@@ -2815,6 +2944,22 @@ export default function VideoEditor() {
 										}
 										onSpeedChange={handleSpeedChange}
 										onSpeedDelete={handleSpeedDelete}
+										selectedVolumeId={selectedVolumeId}
+										selectedVolumeValue={
+											selectedVolumeId
+												? (volumeRegions.find((r) => r.id === selectedVolumeId)?.volume ?? null)
+												: null
+										}
+										onVolumeChange={(volume) => handleVolumeChange(volume, true)}
+										onVolumeCommit={commitState}
+										onVolumePreset={(volume) => handleVolumeChange(volume)}
+										onVolumeDelete={handleVolumeDelete}
+										masterVolume={masterVolume}
+										onMasterVolumeChange={(volume) => updateState({ masterVolume: volume })}
+										onMasterVolumeCommit={commitState}
+										audioMuted={audioMuted}
+										onAudioMutedChange={(muted) => pushState({ audioMuted: muted })}
+										volumeRegionCount={volumeRegions.length}
 										unsavedExport={unsavedExport}
 										onSaveUnsavedExport={handleSaveUnsavedExport}
 										onSaveDiagnostic={handleSaveDiagnostic}
@@ -2875,6 +3020,14 @@ export default function VideoEditor() {
 									onSpeedDelete={handleSpeedDelete}
 									selectedSpeedId={selectedSpeedId}
 									onSelectSpeed={handleSelectSpeed}
+									volumeRegions={volumeRegions}
+									onVolumeAdded={handleVolumeAdded}
+									onVolumeSpanChange={handleVolumeSpanChange}
+									onVolumeDelete={handleVolumeDelete}
+									selectedVolumeId={selectedVolumeId}
+									onSelectVolume={handleSelectVolume}
+									masterVolume={masterVolume}
+									audioMuted={audioMuted}
 									annotationRegions={annotationOnlyRegions}
 									onAnnotationAdded={handleAnnotationAdded}
 									onAnnotationSpanChange={handleAnnotationSpanChange}

@@ -1,12 +1,15 @@
 import type {
 	AnnotationRegion,
+	AudioMixSettings,
 	CropRegion,
 	SpeedRegion,
 	TrimRegion,
+	VolumeRegion,
 	WebcamLayoutPreset,
 	WebcamSizePreset,
 	ZoomRegion,
 } from "@/components/video-editor/types";
+import { createVolumeEnvelope } from "@/lib/audio/volumeEnvelope";
 import { BackgroundLoadError } from "@/lib/wallpaper";
 import type { CursorRecordingData } from "@/native/contracts";
 import { getPlatform } from "@/utils/platformUtils";
@@ -27,6 +30,8 @@ export interface VideoExporterConfig extends ExportConfig {
 	zoomRegions: ZoomRegion[];
 	trimRegions?: TrimRegion[];
 	speedRegions?: SpeedRegion[];
+	volumeRegions?: VolumeRegion[];
+	audioMix?: AudioMixSettings;
 	showShadow: boolean;
 	shadowIntensity: number;
 	showBlur: boolean;
@@ -106,6 +111,9 @@ export function getSourceCopyFastPathBlockers(
 	if (config.webcamVideoUrl) blockers.push("webcam overlay is enabled");
 	if (hasActiveTimeRegions(config.trimRegions)) blockers.push("trim regions are present");
 	if (hasActiveSpeedRegions(config.speedRegions)) blockers.push("speed regions are present");
+	if (!createVolumeEnvelope(config.volumeRegions, config.audioMix).isIdentity) {
+		blockers.push("audio volume is adjusted");
+	}
 	if (hasActiveTimeRegions(config.zoomRegions)) blockers.push("zoom regions are present");
 	if (hasActiveTimeRegions(config.annotationRegions))
 		blockers.push("annotation regions are present");
@@ -476,6 +484,7 @@ export class VideoExporter {
 						this.config.speedRegions,
 						videoInfo.duration,
 						audioExportCodec,
+						createVolumeEnvelope(this.config.volumeRegions, this.config.audioMix),
 					);
 				}
 			}

@@ -34,6 +34,19 @@
 		"customPlaybackSpeed": "Custom Playback Speed",
 		"maxSpeedError": "Speed can't go higher than 16×"
 	},
+	"volume": {
+		"title": "Audio",
+		"sectionVolume": "Section Volume",
+		"selectRegion": "Select a volume region to adjust",
+		"deleteRegion": "Delete Volume Region",
+		"customVolume": "Custom Volume",
+		"masterVolume": "Master Volume",
+		"muteAll": "Mute All Audio",
+		"regionsSummary": "Volume regions on timeline",
+		"howTo": "Place the playhead on a loud or quiet part and press V (or the speaker button in the timeline toolbar) to add a volume region, then pick its level here.",
+		"fadeNote": "Edges fade over 40 ms so changes never click.",
+		"boostNote": "Levels above 100% are limited to avoid distortion."
+	},
 	"trim": {
 		"deleteRegion": "Delete Trim Region"
 	},

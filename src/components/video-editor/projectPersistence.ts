@@ -16,6 +16,7 @@ import {
 import {
 	type AnnotationRegion,
 	type CropRegion,
+	clampAudioVolume,
 	clampPlaybackSpeed,
 	DEFAULT_ANNOTATION_POSITION,
 	DEFAULT_ANNOTATION_SIZE,
@@ -25,6 +26,7 @@ import {
 	DEFAULT_BLUR_FREEHAND_POINTS,
 	DEFAULT_BLUR_INTENSITY,
 	DEFAULT_FIGURE_DATA,
+	DEFAULT_MASTER_VOLUME,
 	DEFAULT_PLAYBACK_SPEED,
 	DEFAULT_WEBCAM_MIRRORED,
 	DEFAULT_WEBCAM_REACTIVE_ZOOM,
@@ -38,6 +40,7 @@ import {
 	MIN_PLAYBACK_SPEED,
 	type SpeedRegion,
 	type TrimRegion,
+	type VolumeRegion,
 	type WebcamLayoutPreset,
 	type WebcamMaskShape,
 	type WebcamPosition,
@@ -78,6 +81,9 @@ export interface ProjectEditorState {
 	autoFocusAll: boolean;
 	trimRegions: TrimRegion[];
 	speedRegions: SpeedRegion[];
+	volumeRegions: VolumeRegion[];
+	masterVolume: number;
+	audioMuted: boolean;
 	annotationRegions: AnnotationRegion[];
 	aspectRatio: AspectRatio;
 	webcamLayoutPreset: WebcamLayoutPreset;
@@ -312,6 +318,25 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 				})
 		: [];
 
+	const normalizedVolumeRegions: VolumeRegion[] = Array.isArray(editor.volumeRegions)
+		? editor.volumeRegions
+				.filter((region): region is VolumeRegion =>
+					Boolean(region && typeof region.id === "string"),
+				)
+				.map((region) => {
+					const rawStart = isFiniteNumber(region.startMs) ? Math.round(region.startMs) : 0;
+					const rawEnd = isFiniteNumber(region.endMs) ? Math.round(region.endMs) : rawStart + 1000;
+					const startMs = Math.max(0, Math.min(rawStart, rawEnd));
+					const endMs = Math.max(startMs + 1, rawEnd);
+					return {
+						id: region.id,
+						startMs,
+						endMs,
+						volume: isFiniteNumber(region.volume) ? clampAudioVolume(region.volume) : 1,
+					};
+				})
+		: [];
+
 	const normalizedAnnotationRegions: AnnotationRegion[] = Array.isArray(editor.annotationRegions)
 		? editor.annotationRegions
 				.filter((region): region is AnnotationRegion =>
@@ -490,6 +515,11 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 		autoFocusAll: typeof editor.autoFocusAll === "boolean" ? editor.autoFocusAll : false,
 		trimRegions: normalizedTrimRegions,
 		speedRegions: normalizedSpeedRegions,
+		volumeRegions: normalizedVolumeRegions,
+		masterVolume: isFiniteNumber(editor.masterVolume)
+			? clampAudioVolume(editor.masterVolume)
+			: DEFAULT_MASTER_VOLUME,
+		audioMuted: typeof editor.audioMuted === "boolean" ? editor.audioMuted : false,
 		annotationRegions: normalizedAnnotationRegions,
 		aspectRatio: normalizedAspectRatio,
 		webcamLayoutPreset: normalizedWebcamLayoutPreset,

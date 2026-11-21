@@ -1,5 +1,6 @@
 import { WebDemuxer } from "web-demuxer";
 import type { SpeedRegion, TrimRegion } from "@/components/video-editor/types";
+import { applyVolumeEnvelopeToPlanes, type VolumeEnvelope } from "@/lib/audio/volumeEnvelope";
 import type { ExportAudioMuxerCodec, VideoMuxer } from "./muxer";
 
 const AUDIO_BITRATE = 128_000;
@@ -221,7 +222,9 @@ export class AudioProcessor {
 		speedRegions: SpeedRegion[] | undefined,
 		validatedDurationSec: number,
 		exportCodec: ExportAudioCodec,
+		volumeEnvelope?: VolumeEnvelope,
 	): Promise<void> {
+		const envelope = volumeEnvelope && !volumeEnvelope.isIdentity ? volumeEnvelope : undefined;
 		const sortedTrims = trimRegions ? [...trimRegions].sort((a, b) => a.startMs - b.startMs) : [];
 		const sortedSpeedRegions = speedRegions
 			? [...speedRegions]
@@ -236,6 +239,7 @@ export class AudioProcessor {
 				sortedTrims,
 				sortedSpeedRegions,
 				validatedDurationSec,
+				envelope,
 			);
 			if (!this.cancelled && renderedAudioBlob.size > 0) {
 				await this.muxRenderedAudioBlob(renderedAudioBlob, muxer, exportCodec);
@@ -248,7 +252,7 @@ export class AudioProcessor {
 		// streamingDecoder.decodeAll's read window so both paths read the same distance past
 		// the validated duration boundary.
 		const readEndSec = validatedDurationSec + 0.5;
-		await this.processTrimOnlyAudio(demuxer, muxer, sortedTrims, readEndSec, exportCodec);
+		await this.processTrimOnlyAudio(demuxer, muxer, sortedTrims, readEndSec, exportCodec, envelope);
 	}
 
 	// Trim-only path, used for projects without speed regions.
@@ -258,6 +262,7 @@ export class AudioProcessor {
 		sortedTrims: TrimRegion[],
 		readEndSec?: number,
 		exportCodec?: ExportAudioCodec,
+		volumeEnvelope?: VolumeEnvelope,
 	): Promise<void> {
 		let audioConfig: AudioDecoderConfig;
 		try {
@@ -374,11 +379,15 @@ export class AudioProcessor {
 			const trimOffsetMs = this.computeTrimOffset(timestampMs, sortedTrims);
 			const adjustedTimestampUs = audioData.timestamp - trimOffsetMs * 1000;
 
-			const adjusted = this.cloneForEncoding(
-				audioData,
-				Math.max(0, adjustedTimestampUs),
-				outputChannels,
-			);
+			// Volume is keyed to the source timeline, so use the pre-trim timestamp.
+			const adjusted = volumeEnvelope
+				? this.applyVolumeForEncoding(
+						audioData,
+						Math.max(0, adjustedTimestampUs),
+						outputChannels,
+						volumeEnvelope,
+					)
+				: this.cloneForEncoding(audioData, Math.max(0, adjustedTimestampUs), outputChannels);
 			audioData.close();
 
 			encoder.encode(adjusted);
@@ -408,6 +417,7 @@ export class AudioProcessor {
 		trimRegions: TrimRegion[],
 		speedRegions: SpeedRegion[],
 		validatedDurationSec: number,
+		volumeEnvelope?: VolumeEnvelope,
 	): Promise<Blob> {
 		const media = document.createElement("audio");
 		media.src = videoUrl;
@@ -430,7 +440,16 @@ export class AudioProcessor {
 		const audioContext = new AudioContext();
 		const sourceNode = audioContext.createMediaElementSource(media);
 		const destinationNode = audioContext.createMediaStreamDestination();
-		sourceNode.connect(destinationNode);
+		const gainNode = audioContext.createGain();
+		sourceNode.connect(gainNode);
+		gainNode.connect(destinationNode);
+		// Follows media.currentTime (source timeline) every frame; the short time
+		// constant smooths steps between animation frames.
+		const syncGain = () => {
+			if (!volumeEnvelope) return;
+			const target = volumeEnvelope.gainAt(media.currentTime * 1000);
+			gainNode.gain.setTargetAtTime(target, audioContext.currentTime, 0.01);
+		};
 
 		let rafId: number | null = null;
 		let recorder: MediaRecorder | null = null;
@@ -458,6 +477,9 @@ export class AudioProcessor {
 			}
 
 			await this.seekTo(media, startPosition);
+			if (volumeEnvelope) {
+				gainNode.gain.value = volumeEnvelope.gainAt(startPosition * 1000);
+			}
 
 			// Set initial playback rate for the starting position.
 			const initialSpeedRegion = this.findActiveSpeedRegion(startPosition * 1000, speedRegions);
@@ -553,6 +575,7 @@ export class AudioProcessor {
 						return;
 					}
 
+					syncGain();
 					const activeSpeedRegion = this.findActiveSpeedRegion(currentTimeMs, speedRegions);
 					const playbackRate = activeSpeedRegion ? activeSpeedRegion.speed : 1;
 					if (Math.abs(media.playbackRate - playbackRate) > 0.0001) {
@@ -581,6 +604,7 @@ export class AudioProcessor {
 			}
 			destinationNode.stream.getTracks().forEach((track) => track.stop());
 			sourceNode.disconnect();
+			gainNode.disconnect();
 			destinationNode.disconnect();
 			await audioContext.close();
 			media.src = "";
@@ -771,6 +795,41 @@ export class AudioProcessor {
 			numberOfChannels: src.numberOfChannels,
 			timestamp: newTimestamp,
 			data: buffer,
+		});
+	}
+
+	private applyVolumeForEncoding(
+		src: AudioData,
+		newTimestamp: number,
+		targetChannels: number,
+		volumeEnvelope: VolumeEnvelope,
+	): AudioData {
+		const sourceChannels = src.numberOfChannels;
+		const frameCount = src.numberOfFrames;
+		const planes = Array.from({ length: sourceChannels }, () => new Float32Array(frameCount));
+		for (let channel = 0; channel < sourceChannels; channel++) {
+			src.copyTo(planes[channel], { format: "f32-planar", planeIndex: channel });
+		}
+
+		applyVolumeEnvelopeToPlanes(planes, src.sampleRate, src.timestamp / 1000, volumeEnvelope);
+
+		let output: Float32Array;
+		if (targetChannels === sourceChannels) {
+			output = new Float32Array(frameCount * sourceChannels);
+			planes.forEach((plane, index) => {
+				output.set(plane, index * frameCount);
+			});
+		} else {
+			output = downmixPlanarChannelsForExport(planes, targetChannels);
+		}
+
+		return new AudioData({
+			format: "f32-planar",
+			sampleRate: src.sampleRate,
+			numberOfFrames: frameCount,
+			numberOfChannels: targetChannels,
+			timestamp: newTimestamp,
+			data: output.buffer as ArrayBuffer,
 		});
 	}
 

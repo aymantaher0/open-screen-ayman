@@ -1,6 +1,15 @@
 import type { Span } from "dnd-timeline";
 import { useItem } from "dnd-timeline";
-import { Gauge, MessageSquare, MousePointer2, Scissors, ZoomIn } from "lucide-react";
+import {
+	Gauge,
+	MessageSquare,
+	MousePointer2,
+	Scissors,
+	Volume1,
+	Volume2,
+	VolumeX,
+	ZoomIn,
+} from "lucide-react";
 import { useMemo } from "react";
 import { useScopedT } from "@/contexts/I18nContext";
 import { cn } from "@/lib/utils";
@@ -16,8 +25,9 @@ interface ItemProps {
 	zoomDepth?: number;
 	zoomCustomScale?: number;
 	speedValue?: number;
+	volumeValue?: number;
 	isAutoFocus?: boolean;
-	variant?: "zoom" | "trim" | "annotation" | "speed" | "blur";
+	variant?: "zoom" | "trim" | "annotation" | "speed" | "blur" | "volume";
 }
 
 // Map zoom depth to multiplier labels
@@ -49,6 +59,7 @@ export default function Item({
 	zoomDepth = 1,
 	zoomCustomScale,
 	speedValue,
+	volumeValue,
 	isAutoFocus = false,
 	variant = "zoom",
 	children,
@@ -63,6 +74,7 @@ export default function Item({
 	const isZoom = variant === "zoom";
 	const isTrim = variant === "trim";
 	const isSpeed = variant === "speed";
+	const isVolume = variant === "volume";
 
 	const glassClass = isZoom
 		? glassStyles.glassGreen
@@ -70,9 +82,22 @@ export default function Item({
 			? glassStyles.glassRed
 			: isSpeed
 				? glassStyles.glassAmber
-				: glassStyles.glassYellow;
+				: isVolume
+					? glassStyles.glassSky
+					: glassStyles.glassYellow;
 
-	const endCapColor = isZoom ? "#21916A" : isTrim ? "#ef4444" : isSpeed ? "#d97706" : "#B4A046";
+	const endCapColor = isZoom
+		? "#21916A"
+		: isTrim
+			? "#ef4444"
+			: isSpeed
+				? "#d97706"
+				: isVolume
+					? "#0ea5e9"
+					: "#B4A046";
+
+	const VolumeIcon =
+		volumeValue === 0 ? VolumeX : volumeValue !== undefined && volumeValue < 1 ? Volume1 : Volume2;
 
 	const timeLabel = useMemo(
 		() => `${formatMs(span.start)} – ${formatMs(span.end)}`,
@@ -151,6 +176,17 @@ export default function Item({
 									<Scissors className="w-3.5 h-3.5 shrink-0" />
 									<span className="text-[11px] font-semibold whitespace-nowrap">
 										{t("labels.trim")}
+									</span>
+								</>
+							) : isVolume ? (
+								<>
+									<VolumeIcon className="w-3.5 h-3.5 shrink-0" />
+									<span className="text-[11px] font-semibold whitespace-nowrap tabular-nums">
+										{volumeValue === undefined
+											? t("labels.volume")
+											: volumeValue === 0
+												? t("labels.muted")
+												: `${Math.round(volumeValue * 100)}%`}
 									</span>
 								</>
 							) : isSpeed ? (

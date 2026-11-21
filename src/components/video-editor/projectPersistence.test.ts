@@ -264,3 +264,38 @@ describe("wallpaper legacy normalization", () => {
 		expect(normalized.wallpaper).toBe("/wallpapers/wallpaper1.jpg");
 	});
 });
+
+describe("audio volume persistence", () => {
+	it("defaults legacy projects to unchanged audio", () => {
+		const normalized = normalizeProjectEditor({});
+		expect(normalized.volumeRegions).toEqual([]);
+		expect(normalized.masterVolume).toBe(1);
+		expect(normalized.audioMuted).toBe(false);
+	});
+
+	it("keeps valid volume regions and clamps out-of-range values", () => {
+		const normalized = normalizeProjectEditor({
+			volumeRegions: [
+				{ id: "volume-1", startMs: 1000.4, endMs: 2000, volume: 0.3 },
+				{ id: "volume-2", startMs: 3000, endMs: 4000, volume: 9 },
+				{ id: "volume-3", startMs: 5000, endMs: 6000, volume: -1 },
+			],
+			masterVolume: 5,
+			audioMuted: true,
+		});
+		expect(normalized.volumeRegions).toEqual([
+			{ id: "volume-1", startMs: 1000, endMs: 2000, volume: 0.3 },
+			{ id: "volume-2", startMs: 3000, endMs: 4000, volume: 2 },
+			{ id: "volume-3", startMs: 5000, endMs: 6000, volume: 0 },
+		]);
+		expect(normalized.masterVolume).toBe(2);
+		expect(normalized.audioMuted).toBe(true);
+	});
+
+	it("drops malformed volume regions", () => {
+		const normalized = normalizeProjectEditor({
+			volumeRegions: [null, { startMs: 0, endMs: 10, volume: 1 }] as never,
+		});
+		expect(normalized.volumeRegions).toEqual([]);
+	});
+});

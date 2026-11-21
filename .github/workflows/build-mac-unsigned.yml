@@ -1,0 +1,92 @@
+name: Build macOS (unsigned, personal use)
+
+# Builds a DMG without an Apple Developer certificate. The app is ad-hoc signed,
+# so on first launch macOS asks you to confirm: right-click the app → Open.
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "Mac architecture (arm64 = Apple Silicon M1/M2/M3/M4, x64 = Intel)"
+        required: true
+        default: arm64
+        type: choice
+        options:
+          - arm64
+          - x64
+  push:
+    branches: [main]
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    env:
+      ARCH: ${{ github.event.inputs.arch || 'arm64' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure sharp prebuilt
+        run: npm rebuild sharp
+        env:
+          npm_config_build_from_source: "false"
+
+      - name: Cache caption assets
+        uses: actions/cache@v4
+        with:
+          path: caption-assets
+          key: caption-assets-${{ hashFiles('scripts/fetch-caption-model.mjs') }}
+
+      - name: Build Vite + Electron
+        run: npx tsc && npx vite build
+
+      - name: Build native macOS helpers
+        run: npm run build:native:mac
+        env:
+          OPENSCREEN_MAC_HELPER_ARCHS: ${{ env.ARCH }}
+
+      - name: Package .app bundle (no certificate)
+        run: npx electron-builder --mac --${{ env.ARCH }} --dir -c.mac.identity=null
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Ad-hoc sign and create DMG
+        id: dmg
+        run: |
+          VERSION=$(node -p 'require("./package.json").version')
+          APP=$(find "release/${VERSION}" -maxdepth 4 -name "*.app" -type d | head -n1)
+          if [ -z "$APP" ]; then
+            echo "::error::No .app bundle found"; ls -laR release || true; exit 1
+          fi
+          codesign --force --deep --options runtime \
+            --entitlements macos.entitlements --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+
+          STAGING="release/dmg-staging"
+          mkdir -p "$STAGING"
+          cp -R "$APP" "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          DMG="release/OpenScreen-Ayman-${ARCH}-${VERSION}-${SHORT_SHA}.dmg"
+          hdiutil create -srcfolder "$STAGING" -volname "OpenScreen" -format UDBZ "$DMG"
+          echo "dmg_path=$DMG" >> "$GITHUB_OUTPUT"
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: openscreen-mac-${{ env.ARCH }}
+          path: ${{ steps.dmg.outputs.dmg_path }}
+          retention-days: 30
